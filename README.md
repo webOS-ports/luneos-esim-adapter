@@ -1,9 +1,12 @@
 luneos-esim-adapter
 ===================
 
-eSIM (GSMA SGP.22) profile management for LuneOS, on the luna-service2 bus as
-`com.webos.service.esim`.
+Summary
+-------
+eSIM (GSMA SGP.22) profile management on the luna-service2 bus as `com.webos.service.esim`.
 
+Description
+-----------
 The work splits in two, and the split is the whole design:
 
 * **Profiles** — listing, downloading, enabling, deleting — are SGP.22. That is

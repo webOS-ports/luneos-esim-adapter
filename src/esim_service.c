@@ -197,12 +197,17 @@ static bool esim_get_status(LSHandle *handle, LSMessage *message, void *user_dat
 {
 	struct esim_service *service = user_data;
 	jvalue_ref reply;
+	bool subscribed;
 
-	if (!luna_service_check_for_subscription_and_process(handle, message))
-		return true;
+	subscribed = luna_service_check_for_subscription_and_process(handle,
+								message);
 
 	reply = esim_build_status(service);
+	jobject_put(reply, J_CSTR_TO_JVAL("subscribed"),
+			jboolean_create(subscribed));
+
 	luna_service_message_validate_and_send(handle, message, reply);
+	j_release(&reply);
 
 	return true;
 }
@@ -212,6 +217,7 @@ static void esim_post_status(struct esim_service *service)
 	jvalue_ref reply = esim_build_status(service);
 
 	luna_service_post_subscription(service->handle, "/", "getStatus", reply);
+	j_release(&reply);
 }
 
 static void esim_sim_props_changed(GDBusConnection *bus, const char *sender,
@@ -251,6 +257,7 @@ static void esim_lpac_reply(int code, const char *message, jvalue_ref result,
 	}
 
 	luna_service_message_validate_and_send(req->handle, req->message, reply);
+	j_release(&reply);
 	esim_request_free(req);
 }
 
@@ -269,6 +276,7 @@ static void esim_lpac_progress(const char *step, void *user_data)
 
 	luna_service_post_subscription(req->handle, "/", "downloadProfile",
 					update);
+	j_release(&update);
 }
 
 static bool esim_run_lpac(struct esim_service *service, LSHandle *handle,
