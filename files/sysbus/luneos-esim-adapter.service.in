@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=com.webos.service.esim
+Exec=@WEBOS_INSTALL_SBINDIR@/luneos-esim-adapter
+Type=static

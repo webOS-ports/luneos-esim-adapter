@@ -1,0 +1,18 @@
+{
+    "esim.operation": [
+        "com.webos.service.esim/getStatus",
+        "com.webos.service.esim/getChipInfo",
+        "com.webos.service.esim/getProfiles",
+        "com.webos.service.esim/downloadProfile",
+        "com.webos.service.esim/enableProfile",
+        "com.webos.service.esim/disableProfile",
+        "com.webos.service.esim/deleteProfile",
+        "com.webos.service.esim/setProfileNickname",
+        "com.webos.service.esim/setActiveSlot"
+    ],
+    "esim.query": [
+        "com.webos.service.esim/getStatus",
+        "com.webos.service.esim/getChipInfo",
+        "com.webos.service.esim/getProfiles"
+    ]
+}

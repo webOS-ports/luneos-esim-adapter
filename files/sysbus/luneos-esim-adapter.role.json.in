@@ -1,0 +1,13 @@
+{
+    "exeName":"@WEBOS_INSTALL_SBINDIR@/luneos-esim-adapter",
+    "trustLevel": "oem",
+    "type": "privileged",
+    "allowedNames": ["com.webos.service.esim"],
+    "permissions": [
+        {
+            "service":"com.webos.service.esim",
+            "inbound":["*"],
+            "outbound":["*"]
+        }
+    ]
+}

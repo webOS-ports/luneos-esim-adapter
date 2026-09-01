@@ -1,0 +1,13 @@
+[Unit]
+Description=LuneOS eSIM adapter
+Requires=ls-hubd.service
+After=ls-hubd.service ofono.service
+Wants=ofono.service
+
+[Service]
+Type=simple
+Restart=on-failure
+ExecStart=/usr/sbin/luneos-esim-adapter
+
+[Install]
+WantedBy=multi-user.target
