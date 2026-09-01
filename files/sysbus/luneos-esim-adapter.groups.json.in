@@ -1,0 +1,5 @@
+{
+ "allowedNames": ["com.webos.service.esim"],
+ "esim.operation": ["dev", "oem"],
+ "esim.query": ["dev", "oem"]
+}
