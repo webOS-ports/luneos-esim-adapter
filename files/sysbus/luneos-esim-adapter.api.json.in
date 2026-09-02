@@ -8,7 +8,8 @@
         "com.webos.service.esim/disableProfile",
         "com.webos.service.esim/deleteProfile",
         "com.webos.service.esim/setProfileNickname",
-        "com.webos.service.esim/setActiveSlot"
+        "com.webos.service.esim/setActiveSlot",
+        "com.webos.service.esim/scanQrCode"
     ],
     "esim.query": [
         "com.webos.service.esim/getStatus",

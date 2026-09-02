@@ -44,6 +44,12 @@ pkg_check_modules(LUNASERVICE2 REQUIRED luna-service2)
 include_directories(${LUNASERVICE2_INCLUDE_DIRS})
 webos_add_compiler_flags(ALL ${LUNASERVICE2_CFLAGS})
 
+# GStreamer is only used for the zbar element, to read an operator's QR
+# activation code out of a still frame the settings page hands over.
+pkg_check_modules(GSTREAMER REQUIRED gstreamer-1.0)
+include_directories(${GSTREAMER_INCLUDE_DIRS})
+webos_add_compiler_flags(ALL ${GSTREAMER_CFLAGS})
+
 pkg_check_modules(PBNJSON_C REQUIRED pbnjson_c)
 include_directories(${PBNJSON_C_INCLUDE_DIRS})
 webos_add_compiler_flags(ALL ${PBNJSON_C_CFLAGS_OTHER})
@@ -57,7 +63,7 @@ webos_add_linker_options(ALL --no-undefined)
 add_executable(luneos-esim-adapter ${SOURCE_FILES})
 target_link_libraries(luneos-esim-adapter
     ${GLIB2_LDFLAGS} ${LUNASERVICE2_LDFLAGS} ${PBNJSON_C_LDFLAGS}
-    ${GIO2_LDFLAGS} ${GOBJECT2_LDFLAGS}
+    ${GIO2_LDFLAGS} ${GOBJECT2_LDFLAGS} ${GSTREAMER_LDFLAGS}
     rt pthread)
 
 webos_build_daemon()

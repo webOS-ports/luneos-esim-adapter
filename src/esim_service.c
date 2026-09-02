@@ -43,6 +43,7 @@
 
 #include "esim_service.h"
 #include "lpac_client.h"
+#include "qr_scan.h"
 #include "luna_service_utils.h"
 
 #define ESIM_SERVICE_NAME		"com.webos.service.esim"
@@ -529,6 +530,90 @@ static bool esim_set_active_slot(LSHandle *handle, LSMessage *message,
 	return true;
 }
 
+/* --- reading an activation code off a QR ---------------------------------- */
+
+static void esim_qr_scan_cb(const char *text, const char *error,
+							void *user_data)
+{
+	struct esim_request *req = user_data;
+	jvalue_ref reply = jobject_create();
+
+	if (!text) {
+		jobject_put(reply, J_CSTR_TO_JVAL("returnValue"),
+				jboolean_create(false));
+		jobject_put(reply, J_CSTR_TO_JVAL("errorText"),
+				jstring_create(error ? error : "no barcode found"));
+		goto send;
+	}
+
+	jobject_put(reply, J_CSTR_TO_JVAL("returnValue"), jboolean_create(true));
+	jobject_put(reply, J_CSTR_TO_JVAL("text"), jstring_create(text));
+
+	/*
+	 * An eSIM QR holds "LPA:1$<smdp>$<matching id>[$<confirmation code>]".
+	 * Split it here so the caller does not have to know the format - and
+	 * so a QR that is not an activation code is reported as such rather
+	 * than silently filling the fields with nonsense.
+	 */
+	if (!strncmp(text, "LPA:", 4)) {
+		char **parts = g_strsplit(text + 4, "$", 4);
+		guint n = g_strv_length(parts);
+
+		if (n >= 3) {
+			jobject_put(reply, J_CSTR_TO_JVAL("smdp"),
+					jstring_create(parts[1]));
+			jobject_put(reply, J_CSTR_TO_JVAL("activationCode"),
+					jstring_create(parts[2]));
+
+			if (n >= 4 && *parts[3])
+				jobject_put(reply,
+					J_CSTR_TO_JVAL("confirmationCode"),
+					jstring_create(parts[3]));
+		}
+
+		g_strfreev(parts);
+	}
+
+send:
+	luna_service_message_validate_and_send(req->handle, req->message, reply);
+	j_release(&reply);
+	esim_request_free(req);
+}
+
+static bool esim_scan_qr_code(LSHandle *handle, LSMessage *message,
+							void *user_data)
+{
+	struct esim_service *service = user_data;
+	jvalue_ref parsed = luna_service_message_parse_and_validate(
+					LSMessageGetPayload(message));
+	struct esim_request *req;
+	char *path;
+
+	if (!jis_valid(parsed)) {
+		luna_service_message_reply_error_bad_json(handle, message);
+		return true;
+	}
+
+	path = esim_get_string_param(handle, message, parsed, "path");
+	j_release(&parsed);
+
+	if (!path)
+		return true;
+
+	req = esim_request_new(service, handle, message);
+
+	if (!qr_scan_file(path, esim_qr_scan_cb, req)) {
+		luna_service_message_reply_custom_error(handle, message,
+				"Could not start the QR decoder. Is the zbar "
+				"GStreamer element installed?");
+		esim_request_free(req);
+	}
+
+	g_free(path);
+
+	return true;
+}
+
 static LSMethod esim_service_methods[] = {
 	{ "getStatus", esim_get_status },
 	{ "getChipInfo", esim_get_chip_info },
@@ -539,6 +624,7 @@ static LSMethod esim_service_methods[] = {
 	{ "deleteProfile", esim_delete_profile },
 	{ "setProfileNickname", esim_set_profile_nickname },
 	{ "setActiveSlot", esim_set_active_slot },
+	{ "scanQrCode", esim_scan_qr_code },
 	{ NULL, NULL },
 };
 
