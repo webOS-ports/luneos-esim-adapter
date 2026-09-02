@@ -255,6 +255,15 @@ static void esim_lpac_reply(int code, const char *message, jvalue_ref result,
 				jnumber_create_i32(code));
 		jobject_put(reply, J_CSTR_TO_JVAL("errorText"),
 				jstring_create(message ? message : "lpac failed"));
+		/*
+		 * lpac names the step that failed; the server's own word for
+		 * why - "Invalid", "NoEligibleProfile" - arrives beside it as
+		 * data. Without that the caller knows where it stopped but not
+		 * what to tell the user about it.
+		 */
+		if (jis_valid(result))
+			jobject_put(reply, J_CSTR_TO_JVAL("errorDetail"),
+					jvalue_duplicate(result));
 	}
 
 	luna_service_message_validate_and_send(req->handle, req->message, reply);

@@ -35,18 +35,28 @@ All methods are registered on the root category, so the full method URI is
 ## Conventions
 
 **Replies.** Every reply carries `returnValue` (boolean). Failures from lpac
-carry both fields:
+carry up to three fields:
 
 ```json
-{ "returnValue": false, "errorCode": -1, "errorText": "es9p_authenticate_client" }
+{ "returnValue": false, "errorCode": -1,
+  "errorText": "es9p_authenticate_client", "errorDetail": "Invalid" }
 ```
 
-`errorText` is lpac's own message where there is one — `"Refused"`,
-`"campaign resource pool is empty"`, `"install_failed_due_to_iccid_already_exists_on_euicc"`
-— so it is worth showing verbatim rather than replacing with something generic.
-Failures raised by the service itself carry only `errorText`. Two generic errors
-can come back from any method taking parameters: `"Malformed json."` and
-`"Invalid parameters."`.
+`errorText` is lpac's own message. For a network step that is the name of the
+SGP.22 function that failed, and `errorDetail` is the far end's reason for
+refusing it — `"Invalid"`, `"Refused"`, `"NoEligibleProfile"`. For a card step
+`errorText` is already the reason, e.g. `"campaign resource pool is empty"` or
+`"install_failed_due_to_iccid_already_exists_on_euicc"`, and there is no detail.
+
+A step name on its own means nothing to a user, so a UI should translate the
+common ones rather than print them: `es9p_initiate_authentication` is "cannot
+reach the server", `es9p_authenticate_client` is "the operator would not accept
+this activation code", `es10b_load_bound_profile_package` is "the chip refused
+the profile, most likely out of space".
+
+`errorDetail` is absent when lpac reported no data. Failures raised by the
+service itself carry only `errorText`. Two generic errors can come back from any
+method taking parameters: `"Malformed json."` and `"Invalid parameters."`.
 
 **Asynchronous methods.** Everything that touches the card runs lpac as a child
 process and replies when it exits, not immediately. `getChipInfo` and
