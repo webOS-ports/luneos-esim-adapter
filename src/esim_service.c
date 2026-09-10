@@ -52,6 +52,12 @@
 #define OFONO_MANAGER_INTERFACE		"org.ofono.Manager"
 #define OFONO_SIM_MANAGER_INTERFACE	"org.ofono.SimManager"
 #define OFONO_EUICC_MANAGER_INTERFACE	"org.ofono.EuiccManager"
+/*
+ * The nemo slot-management extension. Needed because ofono only publishes
+ * CardSlotCount on SimManager once a card is actually present - see
+ * esim_slot_count_fallback().
+ */
+#define OFONO_MODEM_MANAGER_INTERFACE	"org.nemomobile.ofono.ModemManager"
 
 extern GMainLoop *event_loop;
 
@@ -136,10 +142,58 @@ static char *esim_find_modem(GDBusConnection *bus)
 	return found;
 }
 
+/*
+ * How many card slots this modem has, when ofono will not say.
+ *
+ * SimManager publishes CardSlotCount and ActiveCardSlot only while a card is
+ * present: with none, GetProperties returns "Present" and nothing else.
+ * That is exactly the state a single-SIM device is in when the eUICC is *not*
+ * the active slot - sargo boots with persist.vendor.mdm.multisim.cfg=ss on
+ * slot_1, so the eUICC on slot 2 has no card and neither does slot 1 unless a
+ * physical SIM is fitted.
+ *
+ * Passing that straight through left the Settings page unable to help: its
+ * "SIM slot" group is gated on slotCount > 1, which defaults to 1 when the
+ * property is missing, so the button that would activate the eUICC's slot was
+ * hidden precisely because that slot was not active. Nothing in the UI could
+ * break the deadlock, and getProfiles just kept failing with the modem's
+ * INTERNAL_ERR because there was no card to open a logical channel on.
+ *
+ * The number of modems ofono offers is the same number on every device that
+ * has this problem - one modem per slot - and unlike CardSlotCount it is
+ * available with no card at all. Verified on sargo: GetAvailableModems returns
+ * /ril_0 and /ril_1, and CardSlotCount reads 2 once a card is present.
+ *
+ * Returns 0 when the count cannot be determined, in which case the caller
+ * reports nothing and the page behaves as it did before.
+ */
+static int esim_slot_count_fallback(GDBusConnection *bus)
+{
+	GVariant *reply;
+	GVariant *paths;
+	int count = 0;
+
+	reply = g_dbus_connection_call_sync(bus, OFONO_SERVICE, "/",
+			OFONO_MODEM_MANAGER_INTERFACE, "GetAvailableModems",
+			NULL, G_VARIANT_TYPE("(ao)"), G_DBUS_CALL_FLAGS_NONE,
+			10000, NULL, NULL);
+
+	if (!reply)
+		return 0;
+
+	paths = g_variant_get_child_value(reply, 0);
+	count = (int) g_variant_n_children(paths);
+	g_variant_unref(paths);
+	g_variant_unref(reply);
+
+	return count;
+}
+
 static jvalue_ref esim_build_status(struct esim_service *service)
 {
 	jvalue_ref reply = jobject_create();
 	GVariant *props = NULL;
+	gboolean slot_count_from_props = FALSE;
 
 	g_free(service->modem);
 	service->modem = service->bus ? esim_find_modem(service->bus) : NULL;
@@ -166,9 +220,11 @@ static jvalue_ref esim_build_status(struct esim_service *service)
 		const char *iccid = NULL;
 		GVariant *v;
 
-		if (g_variant_lookup(dict, "CardSlotCount", "u", &u32))
+		if (g_variant_lookup(dict, "CardSlotCount", "u", &u32)) {
 			jobject_put(reply, J_CSTR_TO_JVAL("slotCount"),
 					jnumber_create_i32(u32));
+			slot_count_from_props = TRUE;
+		}
 
 		if (g_variant_lookup(dict, "ActiveCardSlot", "u", &u32))
 			jobject_put(reply, J_CSTR_TO_JVAL("activeSlot"),
@@ -189,6 +245,21 @@ static jvalue_ref esim_build_status(struct esim_service *service)
 
 		g_variant_unref(dict);
 		g_variant_unref(props);
+	}
+
+	/*
+	 * No card, so no CardSlotCount. Say how many slots there are anyway -
+	 * without it the Settings page cannot offer the switch that would make
+	 * the eUICC reachable. activeSlot is deliberately left absent: it is
+	 * genuinely unknown here, and the page treats "unknown" as "offer every
+	 * slot" rather than guessing one and disabling its button.
+	 */
+	if (!slot_count_from_props && service->bus) {
+		int slots = esim_slot_count_fallback(service->bus);
+
+		if (slots > 1)
+			jobject_put(reply, J_CSTR_TO_JVAL("slotCount"),
+					jnumber_create_i32(slots));
 	}
 
 	return reply;
