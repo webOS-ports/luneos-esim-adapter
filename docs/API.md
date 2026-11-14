@@ -227,21 +227,30 @@ Makes a profile the active SIM. Any currently enabled profile is disabled first.
 
 **Parameters** — `iccid` (string, required).
 
-**A successful enable is not the whole story.** The modem does not re-read the
-card by itself, so ofono can still report no SIM afterwards. Bouncing the slot
-mapping forces a card reset:
+**The card is reset afterwards.** The eUICC applies a profile change only when
+the card is reset, and the modem does not do that by itself. Once lpac has
+switched the profile, the service asks ofono to power the card down and up
+(`org.ofono.EuiccManager.ResetCard`) and replies when that is done. The card
+then disappears from ofono for a few seconds and comes back with the new
+profile; `getStatus` subscribers see both changes.
 
+The reply says whether the reset happened:
+
+```json
+{ "returnValue": true, "cardReset": true }
 ```
-luna-send -n 1 luna://com.webos.service.esim/setActiveSlot '{"slot":1}'
-luna-send -n 1 luna://com.webos.service.esim/setActiveSlot '{"slot":2}'
-```
+
+`cardReset: false` comes with `cardResetError`, ofono's reason — for example
+on an ofono without `ResetCard`, or a modem that cannot power the card. The
+profile change has still been made, but takes effect only after a reboot.
 
 ## disableProfile
 
 **Parameters** — `iccid` (string, required).
 
 Leaves the eUICC with no enabled profile, which presents no UICC application —
-ofono will report `simPresent: false`.
+ofono will report `simPresent: false`. The card is reset afterwards and the
+reply carries `cardReset`, as for [`enableProfile`](#enableprofile).
 
 ## deleteProfile
 
@@ -266,8 +275,7 @@ Chooses which physical card slot the modem uses. Only meaningful when
 **Parameters** — `slot` (integer, required, **1-based**, matching `activeSlot`).
 
 On a device where the eUICC is a second physical slot behind a single logical
-modem, this is the difference between the eUICC being reachable and not. It is
-also how a card reset is forced after enabling a profile.
+modem, this is the difference between the eUICC being reachable and not.
 
 **Failures.** Switching twice in quick succession fails while the card is still
 being re-read — leave several seconds between switches, and treat a failure as

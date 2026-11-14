@@ -461,6 +461,105 @@ done:
 	return ret;
 }
 
+/*
+ * Enabling or disabling a profile.
+ *
+ * lpac switches the profile on the eUICC, but the eUICC applies the switch
+ * only when the card is reset, and the modem keeps reporting the old card
+ * until then: no SIM after an enable, the old one after a disable. lpac can
+ * ask the eUICC for a REFRESH instead (its refresh flag), but that is a
+ * proactive command, and a modem with no STK session on the card - which is
+ * what a blank eUICC has - never fetches it. Seen on the Brax3: the eUICC
+ * answered the enable with 91 0B and nothing came of it.
+ *
+ * So once lpac is done, ofono is asked to power the card down and up. The
+ * reply waits for that and says whether it happened: the profile change
+ * itself has succeeded either way, but without the reset it takes effect
+ * only after a reboot.
+ */
+struct esim_switch {
+	struct esim_request *req;
+	jvalue_ref result;		/* lpac's, passed on */
+};
+
+static void esim_switch_reply(struct esim_switch *sw, gboolean reset,
+				const char *reset_error)
+{
+	struct esim_request *req = sw->req;
+	jvalue_ref reply = jobject_create();
+
+	jobject_put(reply, J_CSTR_TO_JVAL("returnValue"), jboolean_create(true));
+	if (jis_valid(sw->result))
+		jobject_put(reply, J_CSTR_TO_JVAL("result"),
+				jvalue_duplicate(sw->result));
+	jobject_put(reply, J_CSTR_TO_JVAL("cardReset"), jboolean_create(reset));
+	if (reset_error)
+		jobject_put(reply, J_CSTR_TO_JVAL("cardResetError"),
+				jstring_create(reset_error));
+
+	luna_service_message_validate_and_send(req->handle, req->message, reply);
+	j_release(&reply);
+
+	/* The card is coming back with the other profile */
+	esim_post_status(req->service);
+
+	j_release(&sw->result);
+	esim_request_free(req);
+	g_free(sw);
+}
+
+static void esim_reset_card_cb(GObject *source, GAsyncResult *res,
+							gpointer user_data)
+{
+	struct esim_switch *sw = user_data;
+	GError *error = NULL;
+	GVariant *reply = g_dbus_connection_call_finish(G_DBUS_CONNECTION(source),
+							res, &error);
+
+	if (reply) {
+		g_variant_unref(reply);
+		esim_switch_reply(sw, TRUE, NULL);
+	} else {
+		g_warning("Could not reset the card after the profile switch: %s",
+				error->message);
+		esim_switch_reply(sw, FALSE, error->message);
+		g_error_free(error);
+	}
+}
+
+static void esim_switch_lpac_reply(int code, const char *message,
+				jvalue_ref result, void *user_data)
+{
+	struct esim_request *req = user_data;
+	struct esim_service *service = req->service;
+	struct esim_switch *sw;
+
+	if (code != 0) {
+		/* Nothing changed on the card, nothing to reset */
+		esim_lpac_reply(code, message, result, req);
+		return;
+	}
+
+	sw = g_new0(struct esim_switch, 1);
+	sw->req = req;
+	sw->result = jis_valid(result) ? jvalue_duplicate(result) : jinvalid();
+
+	if (!service->modem) {
+		esim_switch_reply(sw, FALSE, "No modem with eUICC support");
+		return;
+	}
+
+	/*
+	 * lpac has exited by now, so its logical channel is closed. Powering
+	 * the card down takes a moment and coming back up longer; 30 s is
+	 * well past what the Brax3 needs.
+	 */
+	g_dbus_connection_call(service->bus, OFONO_SERVICE, service->modem,
+			OFONO_EUICC_MANAGER_INTERFACE, "ResetCard", NULL, NULL,
+			G_DBUS_CALL_FLAGS_NONE, 30000, NULL,
+			esim_reset_card_cb, sw);
+}
+
 /* enable / disable / delete all take just an iccid */
 static bool esim_profile_action(LSHandle *handle, LSMessage *message,
 				void *user_data, const char *action)
@@ -483,8 +582,21 @@ static bool esim_profile_action(LSHandle *handle, LSMessage *message,
 
 	{
 		const char * const argv[] = { "profile", action, iccid, NULL };
+		struct esim_request *req;
 
-		ret = esim_run_lpac(user_data, handle, message, argv, false);
+		if (strcmp(action, "enable") != 0 &&
+				strcmp(action, "disable") != 0) {
+			ret = esim_run_lpac(user_data, handle, message, argv,
+						false);
+		} else {
+			req = esim_request_new(user_data, handle, message);
+			if (!lpac_run(argv, esim_switch_lpac_reply, NULL, req)) {
+				luna_service_message_reply_custom_error(handle,
+						message, "Could not run lpac");
+				esim_request_free(req);
+			}
+			ret = true;
+		}
 	}
 
 	g_free(iccid);

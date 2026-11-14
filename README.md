@@ -84,8 +84,9 @@ Two behaviours worth knowing:
 
 * Switching slots twice in quick succession fails; the card is still being
   re-read. Leave a few seconds between switches.
-* Enabling a profile is not enough on its own to make it usable — the modem has
-  to re-read the card. A slot bounce does that.
+* Enabling or disabling a profile takes effect only when the card is reset.
+  The service has ofono power the card down and up afterwards
+  (`EuiccManager.ResetCard`), so no slot switch is needed for it.
 
 License
 -------
