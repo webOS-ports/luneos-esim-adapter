@@ -53,7 +53,12 @@ typedef void (*lpac_result_cb)(int code, const char *message,
  */
 typedef void (*lpac_progress_cb)(const char *step, void *user_data);
 
-/* argv is NULL-terminated, without the "lpac" itself: e.g. {"profile","list"} */
+/*
+ * argv is NULL-terminated, without the "lpac" itself: e.g. {"profile","list"}
+ *
+ * Returns true if cb will be called, exactly once. False means lpac could
+ * not be started, and cb is not called: the caller answers for itself.
+ */
 bool lpac_run(const char * const *argv, lpac_result_cb cb,
               lpac_progress_cb progress_cb, void *user_data);
 

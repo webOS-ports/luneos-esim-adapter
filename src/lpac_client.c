@@ -33,7 +33,7 @@
 static GQueue lpac_pending = G_QUEUE_INIT;
 static struct lpac_call *lpac_current;
 
-static gboolean lpac_start(struct lpac_call *call);
+static gboolean lpac_start(struct lpac_call *call, gboolean report);
 static void lpac_start_next(void);
 
 struct lpac_call {
@@ -48,6 +48,13 @@ struct lpac_call {
 	gboolean drained;
 	GString *tail;		/* last {"type":"lpa"} line seen */
 };
+
+static void lpac_call_free(struct lpac_call *call)
+{
+	g_string_free(call->tail, TRUE);
+	g_strfreev(call->spawn_argv);
+	g_free(call);
+}
 
 static void lpac_call_finish(struct lpac_call *call)
 {
@@ -95,13 +102,10 @@ done:
 	if (jis_valid(parsed))
 		j_release(&parsed);
 
-	g_string_free(call->tail, TRUE);
-	g_strfreev(call->spawn_argv);
-
 	if (lpac_current == call)
 		lpac_current = NULL;
 
-	g_free(call);
+	lpac_call_free(call);
 
 	lpac_start_next();
 }
@@ -175,8 +179,13 @@ static void lpac_child_cb(GPid pid, gint status, gpointer user_data)
 	lpac_call_finish(call);
 }
 
-/* Spawns call; on failure reports it to the caller and frees call. */
-static gboolean lpac_start(struct lpac_call *call)
+/*
+ * Spawns call. On failure call is freed, after its callback is told if
+ * report is set. lpac_run() doesn't report: it returns false instead, and
+ * its caller, still in the call, answers for itself. A queued call has no
+ * one else to answer it.
+ */
+static gboolean lpac_start(struct lpac_call *call, gboolean report)
 {
 	GError *error = NULL;
 	gchar **envp;
@@ -199,11 +208,10 @@ static gboolean lpac_start(struct lpac_call *call)
 			g_error_free(error);
 		g_strfreev(envp);
 
-		call->cb(-1, "could not run lpac", jinvalid(), call->user_data);
-
-		g_string_free(call->tail, TRUE);
-		g_strfreev(call->spawn_argv);
-		g_free(call);
+		if (report)
+			call->cb(-1, "could not run lpac", jinvalid(),
+					call->user_data);
+		lpac_call_free(call);
 
 		return FALSE;
 	}
@@ -234,7 +242,7 @@ static void lpac_start_next(void)
 			return;
 
 		/* lpac_start() reports and frees on failure; try the one after */
-		lpac_start(next);
+		lpac_start(next, TRUE);
 	}
 }
 
@@ -268,7 +276,7 @@ bool lpac_run(const char * const *argv, lpac_result_cb cb,
 		return true;
 	}
 
-	return lpac_start(call);
+	return lpac_start(call, FALSE);
 }
 
 // vim:ts=4:sw=4:noexpandtab
