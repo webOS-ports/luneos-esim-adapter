@@ -88,6 +88,24 @@ Two behaviours worth knowing:
   The service has ofono power the card down and up afterwards
   (`EuiccManager.ResetCard`), so no slot switch is needed for it.
 
+Tests
+-----
+
+`tests/run.sh [workdir]` builds the service's own `esim_service.c`,
+`lpac_client.c` and `luna_service_utils.c` into a test program and runs it
+under ASan+UBSan (gcc and clang), TSan (gcc and clang) and valgrind. Around
+them:
+
+* `tests/shim.c` stands in for luna-service2: it calls the methods the way
+  the hub does and records replies and subscription posts;
+* lpac is a shell script on `PATH` that prints what a test gives it;
+* `tests/fake_ofono.c` is `org.ofono` on a private bus, which the service
+  takes for the system bus.
+
+It needs glib/gio, pbnjson_c and the luna-service2 headers, and dbus-daemon.
+These come from the build host unless `CC`, `CLANG`, `PKG_CONFIG` and `RUN`
+point at a Yocto sysroot; `run.sh` describes them.
+
 License
 -------
 

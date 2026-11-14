@@ -1,0 +1,17 @@
+# ThreadSanitizer suppressions for run.sh.
+#
+# glib and gio hand their own memory between threads - GDBus's worker
+# thread, the fake ofono's and the main loop - under GMutex, GCond and
+# GAsyncQueue, which glib builds on raw futexes. Neither library is built
+# with TSan, so it sees the allocations and frees of that memory on
+# different threads but not the locking between them, and reports each
+# hand-over as a race. Run without these lines, every report (a couple of
+# hundred) has both stacks entirely inside glib or gio, with no frame of
+# the adapter, the stand-ins or the test.
+#
+# A race involving our own code with glib on neither stack is still
+# reported, and the fake ofono locks its state with pthread's mutex, which
+# TSan does see. Use-after-free across threads is ASan's to find, which
+# runs without suppressions.
+race:libglib-2.0.so.0
+race:libgio-2.0.so.0
